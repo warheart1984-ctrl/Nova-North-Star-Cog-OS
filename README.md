@@ -1,177 +1,163 @@
-AAIS — Adaptive Assistant Intelligence System
-Behavior enforced, not implied.
+# AAIS — Adaptive Assistant Intelligence System
 
-AAIS is a local‑first, law‑governed assistant runtime.
-It does not rely on “model vibes,” hidden heuristics, or implicit trust.
-Every request, every decision, every reroute is explicit, visible, and accountable.
+> **Behavior enforced, not implied.**
 
-AAIS is built for environments where behavior matters more than output.
+AAIS is a local-first, law-governed assistant runtime. Every request, every decision, every reroute is explicit, visible, and accountable.
 
-Why AAIS Exists
-Most assistant systems optimize for answers.
-AAIS optimizes for behavior.
+Built for environments where **behavior matters more than output**.
 
-One clear operating contract per turn
+---
 
-No silent reroutes or hidden fallbacks
+## Why AAIS Exists
 
-Risky or experimental work is isolated from normal work
+Most assistant systems optimize for answers. AAIS optimizes for behavior.
 
-Operator control is preserved, not abstracted away
+- One clear operating contract per turn
+- No silent reroutes or hidden fallbacks
+- Risky and experimental work isolated from normal work
+- Operator control preserved, not abstracted away
+- Every decision leaves a signed, time-bound trace
 
-Every decision leaves a signed, time‑bound trace
+**Core doctrine: Stabilize and Free.**
+Stability before freedom. The system earns more responsibility by staying inside clear rules, explaining its behavior, and failing in a controlled way. If it cannot do that, it slows down, asks for confirmation, or stops.
 
-The doctrine is simple:
+---
 
-Stabilize and Free  
-Stability before freedom.
-The system earns more responsibility by staying inside clear rules, explaining its behavior, and failing in a controlled way.
+## Architecture
 
-If it cannot do that, it slows down, asks for confirmation, or stops.
+Every request moves through a fixed, law-bound path. Nothing bypasses the chain.
 
-Quick Start
-bash
+```mermaid
+flowchart TD
+    Client(["Client / Operator"])
+
+    subgraph Ingress ["Ingress Layer"]
+        Bridge["Bridge\n─────────────\nFail-closed by default\nClassifies & checks\nagainst project law\nSigns every decision"]
+        Jarvis["Jarvis\n─────────────\nMain authority lane\nIngress + runtime control\nOperator-facing"]
+    end
+
+    subgraph Dispatch ["Dispatch Layer"]
+        Forge["Forge\n─────────────\nIsolated contractor lane\nCode execution only\nBounded authority"]
+        OTEM["OTEM\n─────────────\nTask + memory support\nBounded execution lane"]
+        Workflows["Workflows\n─────────────\nPackaged app routes"]
+    end
+
+    subgraph Core ["Core Runtime"]
+        Runtime["aais/ engine/\n─────────────\nTurn contracts\nInvariants\nRole boundaries\nTraceability"]
+        Evolve["Evolve Engine\n─────────────\nLearns from outcomes\nCannot rewrite roles\nor law"]
+    end
+
+    subgraph Providers ["Storage & Providers"]
+        Memory["Governed Memory"]
+        LLMs["LLM Providers\n(Claude, etc.)"]
+        APIs["External APIs"]
+    end
+
+    Client --> Bridge
+    Bridge --> Jarvis
+    Jarvis --> Forge
+    Jarvis --> OTEM
+    Jarvis --> Workflows
+    Forge --> Runtime
+    OTEM --> Runtime
+    Workflows --> Runtime
+    Runtime --> Evolve
+    Evolve --> Memory
+    Evolve --> LLMs
+    Evolve --> APIs
+
+    style Ingress fill:#1a1a2e,stroke:#4a4a8a,color:#e0e0ff
+    style Dispatch fill:#0d1117,stroke:#3a5a3a,color:#d0ffd0
+    style Core fill:#1a0d0d,stroke:#8a3a3a,color:#ffd0d0
+    style Providers fill:#0d0d1a,stroke:#5a5a8a,color:#d0d0ff
+```
+
+### Layer Roles
+
+| Layer | Component | Role |
+|-------|-----------|------|
+| **Ingress** | Bridge | Front door and primary safety boundary. Fail-closed. Signs every decision. |
+| **Ingress** | Jarvis | Main authority lane. Operator-facing ingress and runtime control. |
+| **Dispatch** | Forge | Isolated contractor lane. Code execution only. Bounded authority. |
+| **Dispatch** | OTEM | Bounded task and memory support. |
+| **Dispatch** | Workflows | Packaged app route layer. |
+| **Core** | Runtime | Enforces turn contracts, invariants, role boundaries, continuity, traceability. |
+| **Core** | Evolve Engine | Learns from outcomes within bounds. Cannot alter role definitions or law. |
+
+---
+
+## Quick Start
+
+```bash
 pip install -e .
 python -m aais start --data-dir ./.runtime/aais-data
-Then open:
+```
 
-Surface	URL
-App	http://127.0.0.1:8000/app
-Jarvis Console	http://127.0.0.1:8000/app/jarvis
-Health	http://127.0.0.1:8000/health
+| Surface | URL |
+|---------|-----|
+| App | http://127.0.0.1:8000/app |
+| Jarvis Console | http://127.0.0.1:8000/app/jarvis |
+| Health | http://127.0.0.1:8000/health |
 
+**Optional preflight:**
 
-Optional preflight:
-
-bash
+```bash
 python -m aais prepare --force-build --data-dir ./.runtime/aais-data
 python -m aais doctor --data-dir ./.runtime/aais-data
-Frontend dev server:
+```
 
-bash
+**Frontend dev server:**
+
+```bash
 cd frontend
-npm install
-npm run dev
-Surfaces:
-localhost:3000/jarvis, localhost:3000/workbench, localhost:3000/memory
+npm install && npm run dev
+```
 
-Requirements
-Use requirements.txt for standard local setup.
+Surfaces: `localhost:3000/jarvis` · `localhost:3000/workbench` · `localhost:3000/memory`
 
-Other files:
+---
 
-File	Purpose
-requirements-local.txt	Local dev extras
-requirements-laptop.txt	Constrained/laptop env
-requirements-advanced.txt	Full feature set
-requirements-training.txt	Training pipeline only
+## Requirements
 
+Use `requirements.txt` for standard local setup.
 
-Optional: Claude Provider
-bash
+| File | Purpose |
+|------|---------|
+| `requirements.txt` | Standard local |
+| `requirements-local.txt` | Local dev extras |
+| `requirements-laptop.txt` | Constrained/laptop env |
+| `requirements-advanced.txt` | Full feature set |
+| `requirements-training.txt` | Training pipeline only |
+
+---
+
+## Optional: Claude Provider
+
+```bash
 export ANTHROPIC_API_KEY=your_key
 export AAIS_CLAUDE_MODEL=claude-sonnet-4-20250514
 export AAIS_ENABLE_CLAUDE_AUTO_ROUTING=true
-Or pin Claude via provider_mode=claude_first.
+```
 
-Architecture Overview
-AAIS is a governed stack, not a single service.
-Every request moves through a fixed, law‑bound path:
+Or pin Claude via `provider_mode=claude_first` in the Jarvis Console.
 
-Code
-Client
-  → Bridge / Jarvis
-  → Forge / OTEM / Workflows
-  → Core Runtime
-  → Evolve Engine
-  → Storage / Providers
-1. Ingress Layer — Bridge / Jarvis
-All input enters through a bridge‑enforced lane
+---
 
-Requests are classified and checked against project law
+## Repository Structure
 
-Fail‑closed by default
-
-Every decision is signed and time‑bound
-
-Shows why something was admitted, downgraded, or blocked
-
-This is the system’s front door and primary safety boundary.
-
-2. Dispatch Layer — Forge / OTEM / Workflows
-Forge — isolated contractor lane for code execution
-
-OTEM — bounded task + memory support
-
-Workflows — packaged app routes
-
-Normal work and risky work are separated by design.
-
-3. Core Runtime — aais/, engine/, evolve_engine/
-The runtime enforces:
-
-Turn contracts
-
-Invariants
-
-Role boundaries
-
-Continuity
-
-Traceability
-
-The Evolve Engine learns from outcomes but cannot rewrite roles or law.
-
-4. Memory, Providers, and Subsystems
-Memory is governed and bounded
-
-Providers (LLMs, tools, APIs) are routed through controlled interfaces
-
-Subsystems (e.g., Nova) are admitted only through documented contracts
-
-Nothing is “plug and play.”
-Everything is documented, traced, and law‑bound.
-
-5. Surfaces — frontend/, mobile/, api/
-Thin shells over the governed runtime:
-
-Web app
-
-Mobile app
-
-API
-
-They expose behavior; they do not define it.
-
-Documentation Spine
-Authoritative system understanding lives in:
-
-docs/spine/ — canonical reading path
-
-docs/runtime/ — runtime maps and system references
-
-docs/contracts/ — laws, protocols, doctrine
-
-docs/subsystems/ — admitted subsystem packs
-
-docs/audit/ — coverage and status records
-
-docs/_archive/ and docs/_future/ are non‑authoritative.
-
-Repository Structure
-Code
+```
 aais/                  Core runtime
 api/                   API surface
 app/                   Packaged shell + workflows
 src/                   Entry points (jarvis_operator.py, api.py)
 docs/
-  spine/               Canonical explanation
+  spine/               Canonical reading path
   runtime/             System references
-  contracts/           Laws + contracts
-  subsystems/          Subsystem packs
-  audit/               Status + coverage
-  _archive/            Lineage (not active)
-  _future/             Planned (not active)
+  contracts/           Laws + doctrine
+  subsystems/          Admitted subsystem packs
+  audit/               Coverage + status
+  _archive/            Lineage — not authoritative
+  _future/             Planned — not live
 engine/                Foundation layer
 forge/                 Bounded contractor lane
 evolve_engine/         Outcome-based adaptation
@@ -180,46 +166,55 @@ tests/                 Full test suite
 frontend/              Web app
 mobile/                Expo mobile app
 training/              Training pipeline
-Only docs/ (excluding _archive/ and _future/) is authoritative.
+```
 
-Key Internal Layers
-Layer	Role
-Jarvis	Main authority lane — ingress + runtime control
-Forge	Isolated contractor lane for code execution
-OTEM	Task + memory support
-Workflow Shell	App route layer
-Evolve Engine	Learns from outcomes (within bounds)
+Only `docs/` (excluding `_archive/` and `_future/`) is authoritative for runtime understanding.
 
+---
 
-Cognitive Architecture
-Unified Architectural Hyper‑Systemizer  
-Formal specification of the cognitive engine behind Project Infinity (May 5, 2026).
-(See linked Zenodo document.)
+## Documentation
 
-Project Laws
-Document	Governs
-README Law v1	Documentation rules
-External Suggestion Admission	How external input enters the system
-ARIS Runtime Contract	Embedded repo‑intelligence law
-Cognitive Bridge Runtime Law	Ingress + attestation rules
-REPO_LAWBOOK.md	Full repo operating law
+| Document | Governs |
+|----------|---------|
+| [AAIS Human Guide](docs/spine/) | System overview |
+| [AAIS AI Operating Contract](docs/contracts/) | Runtime behavior contract |
+| [AAIS Master Spec](docs/spine/) | Full specification |
+| [REPO_LAWBOOK.md](REPO_LAWBOOK.md) | Full repo operating law |
 
+**Project Laws:**
 
-Points of Interest
+| Document | Governs |
+|----------|---------|
+| README Law v1 | Documentation rules |
+| External Suggestion Admission Rule | How external input enters the system |
+| ARIS Runtime Contract | Embedded repo-intelligence law |
+| Cognitive Bridge Runtime Law | Ingress + attestation rules |
+
+---
+
+## Cognitive Architecture
+
+[Unified Architectural Hyper-Systemizer](https://zenodo.org/records/20067067) — Formal specification of the cognitive engine behind Project Infinity (May 5, 2026).
+
+---
+
+## Points of Interest
+
 AAIS contains deeper layers for those who explore:
 
-Internal architecture layers — nested subsystems, lineage, early doctrine
-
-Foundation artifacts — structural invariants, long‑term stability markers
-
-Historical documents — evolution of the system’s philosophy
-
-Compiler‑like behavior — introspective metadata and narrative traces
+- **Internal architecture layers** — nested subsystems, lineage, early doctrine
+- **Foundation artifacts** — structural invariants, long-term stability markers in `engine/`
+- **Historical documents** — `docs/_archive/` shows the system's evolution
+- **Introspective traces** — certain components maintain narrative metadata as subsystems are added
 
 These are optional and not required for running the system.
 
-Security
-See SECURITY.md for disclosure policy.
+---
 
-License
+## Security
+
+See [SECURITY.md](SECURITY.md) for the disclosure policy.
+
+## License
+
 Apache 2.0
