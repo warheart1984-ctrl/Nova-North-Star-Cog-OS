@@ -193,6 +193,47 @@ SMOKE_SAMPLES: list[dict[str, Any]] = [
         },
         "expected_section": "guardrail_state",
     },
+    {
+        "id": "identity_module",
+        "payload": {
+            "source_module": "aais.governed_llm_module",
+            "channel": "instruction",
+            "label": "System identity",
+            "content": "You are Jarvis, the governed AAIS runtime assistant.",
+            "role": "system",
+        },
+        "expected_section": "identity",
+    },
+    {
+        "id": "attachment",
+        "payload": {
+            "type": "attachment",
+            "name": "blueprint.md",
+            "mime_type": "text/markdown",
+            "size": 4096,
+        },
+        "expected_section": "attachments",
+    },
+    {
+        "id": "provider_preview",
+        "payload": {
+            "model": "gpt-4.1",
+            "messages": [{"role": "user", "content": "Summarize the UL substrate."}],
+            "mode": "fast",
+            "stream": False,
+        },
+        "expected_section": "provider_payload",
+    },
+    {
+        "id": "workspace_context",
+        "payload": {
+            "query": "aais_ul_substrate",
+            "prompt_block": "Workspace context auto-attached",
+            "results": [{"relative_path": "src/aais_ul_substrate.py"}],
+            "summary": "Attached 1 workspace match.",
+        },
+        "expected_section": "workspace_context",
+    },
 ]
 
 

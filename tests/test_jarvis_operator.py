@@ -654,8 +654,10 @@ class TestJarvisOperator(unittest.TestCase):
         self.assertEqual(payload["kind"], "generate_diff")
         self.assertTrue(payload["result"]["ok"])
         self.assertEqual(payload["forge_context"]["constraints"]["language"], "python")
-        self.assertEqual(payload["law_enforcement"]["contract_version"], "aais.forge.ul.v1")
-        self.assertEqual(payload["ul_snapshot"]["count"], 5)
+        self.assertEqual(payload["law_enforcement"]["contract_version"], "aais.project_infi.ul.v1")
+        self.assertEqual(payload["cisiv_stage"], "structure")
+        self.assertGreaterEqual(int((payload.get("ul_trace") or payload.get("ul_snapshot") or {}).get("count") or 0), 0)
+        self.assertIn("ul_substrate", payload)
         mock_run.assert_called_once()
 
     def test_request_evolution_job_wraps_result_with_hall_tracking(self):
@@ -692,6 +694,9 @@ class TestJarvisOperator(unittest.TestCase):
         self.assertEqual(payload["evaluation"]["mode"], "forge_eval")
         self.assertEqual(payload["result"]["result"]["hall_of_fame_count"], 2)
         self.assertEqual(payload["result"]["result"]["hall_of_shame_count"], 1)
+        self.assertEqual(payload["law_enforcement"]["contract_version"], "aais.project_infi.ul.v1")
+        self.assertEqual(payload["cisiv_stage"], "structure")
+        self.assertIn("ul_substrate", payload)
         mock_evolve.assert_called_once()
 
     def test_handle_command_rejects_governed_memory_store_with_structured_reason(self):

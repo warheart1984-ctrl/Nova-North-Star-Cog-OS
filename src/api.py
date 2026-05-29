@@ -30,6 +30,16 @@ from src.anti_drift import (
 )
 from src.aais_blueprint import build_aais_blueprint
 from src.aais_ul_substrate import attach_ul_substrate, substrate_status
+from src.chat_turn_governance import (
+    apply_chat_turn_admission_block,
+    attach_modular_preview_to_response_trace,
+    finalize_chat_turn_admission,
+    infer_chat_turn_cisiv_stage,
+    prepare_chat_turn_modular_package,
+    provider_messages_from_preview,
+    wrap_chat_runtime_payload,
+)
+from src.cisiv import CISIV_STAGE_SEQUENCE
 from src.config import get_config
 from src.conversation_memory import (
     ConversationTurn,
@@ -5631,6 +5641,86 @@ def _build_generation_messages(session, plan_summary=None, *, response_trace=Non
     return messages
 
 
+def _protocol_messages_for_modular_preview(
+    session,
+    *,
+    plan_summary=None,
+    max_length=None,
+    model=None,
+    response_trace=None,
+):
+    """Build protocol envelope messages used by the modular UL preview path."""
+    prompt_token_budget, reserved_response_budget, _budget_policy = _resolve_prompt_token_budget(
+        session,
+        max_length=max_length,
+        model=model,
+    )
+    prompt_trace = {}
+    envelope = session.build_protocol_envelope(
+        max_tokens_estimate=prompt_token_budget,
+        extra_system_blocks=_extra_prompt_blocks(session, plan_summary=plan_summary),
+        prompt_trace=prompt_trace,
+        reserved_response_budget=reserved_response_budget,
+    )
+    _record_prompt_assembly_trace(session, response_trace, prompt_trace)
+    return list(envelope.get("messages") or [])
+
+
+def _preview_model_name(session, *, model=None) -> str:
+    routing_profile = session.metadata.get("model_route") or {}
+    return str(
+        routing_profile.get("provider_model")
+        or routing_profile.get("model")
+        or model
+        or "local"
+    )
+
+
+def _prepare_chat_turn_modular_generation(
+    session,
+    *,
+    plan_summary=None,
+    response_trace=None,
+    max_length=None,
+    model=None,
+    temperature=0.7,
+    stream=False,
+):
+    """Prepare one modular generation package for local and remote model paths."""
+    response_mode = normalize_response_mode(session.metadata.get("response_mode"))
+    protocol_messages = _protocol_messages_for_modular_preview(
+        session,
+        plan_summary=plan_summary,
+        max_length=max_length,
+        model=model,
+        response_trace=response_trace,
+    )
+    local_messages = _build_generation_messages(
+        session,
+        plan_summary=plan_summary,
+        response_trace=response_trace,
+        max_length=max_length,
+        model=model,
+    )
+    package = prepare_chat_turn_modular_package(
+        session,
+        protocol_messages=protocol_messages,
+        model=_preview_model_name(session, model=model),
+        stream=stream,
+        temperature=temperature,
+        max_tokens=int(max_length or 0) or 512,
+        mode=response_mode,
+    )
+    preview = dict(package["preview"])
+    attach_modular_preview_to_response_trace(response_trace, preview)
+    session.metadata["cisiv_stage"] = infer_chat_turn_cisiv_stage(phase="generate")
+    return {
+        "local_messages": local_messages,
+        "provider_messages": list(package["provider_messages"]),
+        "preview": preview,
+    }
+
+
 def _build_plan_guidance_block(plan_summary=None):
     """Render the hidden planning block used to ground a final answer turn."""
     if not plan_summary:
@@ -6225,7 +6315,7 @@ def _build_chat_runtime_payload(session, session_id, tool_result=None):
     else:
         _build_continuity_profile(session)
     mission_snapshot = mission_board.snapshot(session_id=session_id)
-    return {
+    payload = {
         "session_id": session_id,
         "turn_count": len(session.turns),
         "active_mode": session.spiral_state.active_mode,
@@ -6304,8 +6394,12 @@ def _build_chat_runtime_payload(session, session_id, tool_result=None):
         "jarvis_protocol": session.protocol_summary(tool_result=tool_result),
         "system_guard": system_guard.snapshot(limit_events=4),
         "dreamspace": dreamspace.snapshot(limit_dreams=2),
+        "modular_preview": session.metadata.get("modular_preview"),
+        "cisiv_stage": session.metadata.get("cisiv_stage") or infer_chat_turn_cisiv_stage(phase="gather"),
+        "cisiv_stage_sequence": list(CISIV_STAGE_SEQUENCE),
         "tool_result": tool_result,
     }
+    return wrap_chat_runtime_payload(payload)
 
 
 def _apply_mission_critic_review(session, review):
@@ -6376,29 +6470,20 @@ def _apply_mission_critic_review(session, review):
 
 
 def _build_provider_messages(session, plan_summary=None, *, max_length=None, model=None, response_trace=None):
-    """Build provider-facing Jarvis messages through the modular evolving-style bridge."""
-    prompt_token_budget, reserved_response_budget, _budget_policy = _resolve_prompt_token_budget(
+    """Build provider-facing Jarvis messages through the modular preview path."""
+    preview = session.metadata.get("modular_preview")
+    if isinstance(preview, dict) and preview.get("provider_messages"):
+        return provider_messages_from_preview(preview)
+
+    generation = _prepare_chat_turn_modular_generation(
         session,
+        plan_summary=plan_summary,
+        response_trace=response_trace or session.metadata.get("response_trace"),
         max_length=max_length,
         model=model,
+        stream=False,
     )
-    prompt_trace = {}
-    envelope = session.build_protocol_envelope(
-        max_tokens_estimate=prompt_token_budget,
-        extra_system_blocks=_extra_prompt_blocks(session, plan_summary=plan_summary),
-        prompt_trace=prompt_trace,
-        reserved_response_budget=reserved_response_budget,
-    )
-    _record_prompt_assembly_trace(session, response_trace, prompt_trace)
-    protocol_messages = list(envelope.get("messages") or [])
-    return build_provider_messages_from_protocol(
-        protocol_messages,
-        mode=normalize_response_mode(session.metadata.get("response_mode")),
-        metadata={
-            "session_id": session.session_id,
-            "provider": (session.metadata.get("model_route") or {}).get("provider") or "local",
-        },
-    )
+    return generation["provider_messages"]
 
 
 def _generate_remote_provider_reply(
@@ -12234,13 +12319,16 @@ def chat_message(session_id):
                             payload={"plan_summary": plan_summary},
                         )
                 session.metadata["response_trace"] = response_trace
-                message_history = _build_generation_messages(
+                generation_package = _prepare_chat_turn_modular_generation(
                     session,
                     plan_summary=response_trace.get("plan_summary"),
                     response_trace=response_trace,
                     max_length=max_length,
                     model=ai_model,
+                    temperature=temperature,
+                    stream=False,
                 )
+                message_history = generation_package["local_messages"]
                 _transition_session_state(
                     session,
                     "responding",
@@ -12286,13 +12374,7 @@ def chat_message(session_id):
                         )
 
                 if response_text is None:
-                    message_history = _build_generation_messages(
-                        session,
-                        plan_summary=response_trace.get("plan_summary"),
-                        response_trace=response_trace,
-                        max_length=max_length,
-                        model=ai_model,
-                    )
+                    message_history = generation_package["local_messages"]
                     model, _ = init_ai()
                     response_text = model.generate_chat(
                         message_history,
@@ -12324,6 +12406,21 @@ def chat_message(session_id):
                     return jsonify(payload), status_code
             else:
                 response_text = _run_with_inference_lock(_generate_chat_reply)
+            if not tool_result and not super_nova_turn:
+                response_text, blocked_payload = finalize_chat_turn_admission(
+                    session,
+                    user_message=user_message,
+                    response_text=response_text,
+                    response_trace=session.metadata.get("response_trace"),
+                )
+                if blocked_payload:
+                    apply_chat_turn_admission_block(session, blocked_payload)
+                    return jsonify(
+                        {
+                            **blocked_payload,
+                            **_build_chat_runtime_payload(session, session_id),
+                        }
+                    ), int(blocked_payload.get("status_code") or 409)
             corrigibility_engine.mark_generation_applied(session)
 
         review = mission_critic.review_reply(
@@ -12883,13 +12980,16 @@ def chat_message_stream(session_id):
                     live_payload = emit_live_event(correction_applied_event)
                     if live_payload:
                         yield live_payload
-                final_messages = _build_generation_messages(
+                generation_package = _prepare_chat_turn_modular_generation(
                     session,
                     plan_summary=response_trace.get("plan_summary"),
                     response_trace=response_trace,
                     max_length=max_new_tokens,
                     model=ai_model,
+                    temperature=temperature,
+                    stream=True,
                 )
+                final_messages = generation_package["local_messages"]
                 contextual_prompt = _messages_to_prompt(final_messages)
                 yield _format_sse_payload({
                     "event": "context",
@@ -12942,13 +13042,7 @@ def chat_message_stream(session_id):
                                     output_token_budget=_effective_provider_output_budget(session, max_new_tokens),
                                 )
                         if response_text is None:
-                            final_messages = _build_generation_messages(
-                                session,
-                                plan_summary=response_trace.get("plan_summary"),
-                                response_trace=response_trace,
-                                max_length=max_new_tokens,
-                                model=ai_model,
-                            )
+                            final_messages = generation_package["local_messages"]
                             model, _ = init_ai()
                             response_text = model.generate_chat(
                                 final_messages,
@@ -13040,13 +13134,7 @@ def chat_message_stream(session_id):
                             )
 
                     if direct_response is None:
-                        final_messages = _build_generation_messages(
-                            session,
-                            plan_summary=None,
-                            response_trace=response_trace,
-                            max_length=max_new_tokens,
-                            model=ai_model,
-                        )
+                        final_messages = generation_package["local_messages"]
                         with ai_inference_lock:
                             model, _ = init_ai()
                             direct_response = model.generate_chat(
@@ -13124,13 +13212,7 @@ def chat_message_stream(session_id):
                                         or response_mode
                                     )
                                 contextual_prompt = _messages_to_prompt(
-                                    _build_generation_messages(
-                                        session,
-                                        plan_summary=response_trace.get("plan_summary"),
-                                        response_trace=response_trace,
-                                        max_length=max_new_tokens,
-                                        model=ai_model,
-                                    )
+                                    generation_package["local_messages"]
                                 )
                                 stream = streamer.generate_stream(
                                     prompt=contextual_prompt,
@@ -13259,6 +13341,24 @@ def chat_message_stream(session_id):
                 return
 
             corrigibility_engine.mark_generation_applied(session)
+            if not active_tool_result and not super_nova_turn:
+                full_response, blocked_payload = finalize_chat_turn_admission(
+                    session,
+                    user_message=user_message,
+                    response_text=full_response,
+                    response_trace=session.metadata.get("response_trace"),
+                )
+                if blocked_payload:
+                    apply_chat_turn_admission_block(session, blocked_payload)
+                    yield _format_sse_payload(
+                        {
+                            "event": "final",
+                            **blocked_payload,
+                            **_build_chat_runtime_payload(session, session_id),
+                        }
+                    )
+                    yield _format_sse_payload({"event": "done"})
+                    return
             review = mission_critic.review_reply(
                 answer=full_response,
                 user_message=user_message,

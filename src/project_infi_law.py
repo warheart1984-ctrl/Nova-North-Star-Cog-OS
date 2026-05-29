@@ -7,6 +7,7 @@ from typing import Any
 
 from src.aris_integration import ARIS_CONTRACT_VERSION, build_aris_enforcement
 from src.aais_ul import build_ul_snapshot
+from src.cisiv import normalize_cisiv_stage as normalize_shared_cisiv_stage
 from src.governance_layer import GovernanceLayer, governance_layer
 from src.project_infi_state_machine import (
     CycleContext,
@@ -51,18 +52,7 @@ def _clip_text(value: Any, *, limit: int = 220) -> str:
 
 
 def _normalize_cisiv_stage(value: Any, *, default: str = "implementation") -> str:
-    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "verify": "verification",
-        "verified": "verification",
-        "test": "verification",
-        "build": "implementation",
-        "implemented": "implementation",
-    }
-    normalized = aliases.get(normalized, normalized)
-    if normalized in {"concept", "identity", "structure", "implementation", "verification"}:
-        return normalized
-    return default
+    return normalize_shared_cisiv_stage(value, default=default)
 
 
 def _law_check(

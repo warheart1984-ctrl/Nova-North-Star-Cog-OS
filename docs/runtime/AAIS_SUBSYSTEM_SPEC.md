@@ -316,9 +316,9 @@ AAIS subsystems currently cluster into these architectural layers:
 
 ### Universal Language And Modular Preview
 
-- status: `partial`
+- status: `live`
 - primary purpose: UL payload shaping and doctrine-aware modular context
-  assembly
+  assembly on ordinary chat turns, forge contractors, and governed runtime surfaces
 - architectural layer: authority and cognition
 - dependencies:
   - `src/aais_ul.py`
@@ -331,6 +331,8 @@ AAIS subsystems currently cluster into these architectural layers:
   - output: UL snapshots and doctrine-bearing payloads
 - related files/modules:
   - `src/aais_ul.py`
+  - `src/cisiv.py`
+  - `src/chat_turn_governance.py`
   - `src/jarvis_modular.py`
   - `src/writers_3_rules.py`
   - `src/angels_and_wards.py`
@@ -338,7 +340,13 @@ AAIS subsystems currently cluster into these architectural layers:
 - invariants or doctrine surfaces:
   - `docs/contracts/AAIS_UL_DOCTRINE.md`
 - current implementation gaps:
-  - not yet the canonical main runtime path for ordinary turns
+  - full Project Infi cycle on every repo mutation path beyond patch apply remains partial
+  - UL App Bridge and voice bind remain OS-level future work
+- admission posture:
+  - ordinary chat turns: Project Infi verification admission via `finalize_chat_turn_admission()`
+  - forge/evolve contractors: governed runtime admission via `src/forge_repo_governance.py`
+  - patch review lifecycle: create/decision/apply each carry Project Infi metadata
+  - tool-result and Super-Nova turns: specialized admission paths remain separate
 - integration risk: `medium`
 - recommended priority: `P2 after infrastructure`
 
@@ -1016,7 +1024,6 @@ AAIS subsystems currently cluster into these architectural layers:
 - Realtime event-cause predictor
 - Governed direct pipeline as a full runtime transport substrate
 - OTEM beyond the current bounded ceiling
-- Universal Language and modular preview as a primary runtime substrate
 - Invariant engine as a runtime subsystem
 - a distinct standalone ARIS service beyond the current embedded AAIS profile
 
@@ -1046,6 +1053,7 @@ AAIS subsystems currently cluster into these architectural layers:
 - conversation and continuity substrate
 - Jarvis protocol and reasoning fabric
 - orchestration core
+- AAIS-UL runtime substrate (adaptation + governed command layer)
 - safety and response integrity stack
 - direct challenge and relational lane
 - Nova companion line
@@ -1065,7 +1073,6 @@ AAIS subsystems currently cluster into these architectural layers:
 
 - OTEM bounded reasoning lane
 - embedded ARIS runtime profile
-- Universal Language and modular preview
 - governed direct pipeline
 - perception, spatial, and mystic toolkit
 - module governance and phase gate

@@ -13,16 +13,10 @@ from src.state_hygiene import (
     normalize_truth_scope,
     project_record,
 )
+from src.cisiv import CISIV_LOGBOOK_STAGES, infer_lifecycle_cisiv_stage, normalize_cisiv_stage
 
 
 RUN_LEDGER_FILENAME = "run-ledger.json"
-CISIV_LOGBOOK_STAGES = {
-    "concept",
-    "identity",
-    "structure",
-    "implementation",
-    "verification",
-}
 
 
 def _utc_now() -> str:
@@ -33,38 +27,6 @@ def _wrap_run_record(run: dict[str, Any]) -> dict[str, Any]:
     from src.aais_ul_substrate import attach_ul_substrate
 
     return attach_ul_substrate(dict(run))
-
-
-def _normalize_cisiv_stage(value: Any, *, default: str = "implementation") -> str:
-    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "verify": "verification",
-        "verified": "verification",
-        "test": "verification",
-        "implemented": "implementation",
-        "build": "implementation",
-    }
-    normalized = aliases.get(normalized, normalized)
-    if normalized in CISIV_LOGBOOK_STAGES:
-        return normalized
-    return default
-
-
-def _infer_lifecycle_cisiv_stage(lifecycle: dict[str, Any], *, default: str = "implementation") -> str:
-    explicit = str(lifecycle.get("cisiv_stage") or "").strip()
-    if explicit:
-        return _normalize_cisiv_stage(explicit, default=default)
-    action_text = " ".join(
-        str(item or "")
-        for item in (
-            lifecycle.get("action_id"),
-            lifecycle.get("action_label"),
-            lifecycle.get("source"),
-        )
-    ).lower()
-    if any(token in action_text for token in ("test", "verify", "verification", "smoke", "lint", "check", "eval")):
-        return "verification"
-    return _normalize_cisiv_stage(default, default="implementation")
 
 
 class RunLedger:
@@ -119,14 +81,14 @@ class RunLedger:
             normalized["action_instance_ids"] = []
         if not isinstance(normalized.get("meta"), dict):
             normalized["meta"] = {}
-        normalized["cisiv_stage"] = _normalize_cisiv_stage(
+        normalized["cisiv_stage"] = normalize_cisiv_stage(
             normalized.get("cisiv_stage") or normalized["meta"].get("cisiv_stage"),
             default="implementation",
         )
         normalized["steps"] = [
             {
                 **dict(step),
-                "cisiv_stage": _normalize_cisiv_stage(
+                "cisiv_stage": normalize_cisiv_stage(
                     step.get("cisiv_stage") or (step.get("meta") or {}).get("cisiv_stage"),
                     default=normalized["cisiv_stage"],
                 ),
@@ -140,7 +102,7 @@ class RunLedger:
             else None
         )
         if normalized["current_action"] is not None:
-            normalized["current_action"]["cisiv_stage"] = _normalize_cisiv_stage(
+            normalized["current_action"]["cisiv_stage"] = normalize_cisiv_stage(
                 normalized["current_action"].get("cisiv_stage"),
                 default=normalized["cisiv_stage"],
             )
@@ -168,7 +130,7 @@ class RunLedger:
     ) -> dict[str, Any]:
         created_at = _utc_now()
         normalized_meta = dict(meta or {})
-        cisiv_stage = _normalize_cisiv_stage(normalized_meta.get("cisiv_stage"), default="implementation")
+        cisiv_stage = normalize_cisiv_stage(normalized_meta.get("cisiv_stage"), default="implementation")
         normalized_meta["cisiv_stage"] = cisiv_stage
         run = {
             "id": run_id or f"run_{uuid4().hex}",
@@ -215,7 +177,7 @@ class RunLedger:
                         return _wrap_run_record(dict(run))
             created_at = _utc_now()
             normalized_meta = dict(meta or {})
-            cisiv_stage = _normalize_cisiv_stage(normalized_meta.get("cisiv_stage"), default="implementation")
+            cisiv_stage = normalize_cisiv_stage(normalized_meta.get("cisiv_stage"), default="implementation")
             normalized_meta["cisiv_stage"] = cisiv_stage
             run = {
                 "id": f"run_{uuid4().hex}",
@@ -257,7 +219,7 @@ class RunLedger:
                 "status": str(step.get("status") or "recorded").strip() or "recorded",
                 "created_at": created_at,
                 "meta": dict(step.get("meta") or {}),
-                "cisiv_stage": _normalize_cisiv_stage(
+                "cisiv_stage": normalize_cisiv_stage(
                     step.get("cisiv_stage") or (step.get("meta") or {}).get("cisiv_stage"),
                     default=run.get("cisiv_stage") or "implementation",
                 ),
@@ -359,10 +321,10 @@ class RunLedger:
             kind="operator_action",
             meta={
                 "action_id": lifecycle.get("action_id"),
-                "cisiv_stage": _infer_lifecycle_cisiv_stage(lifecycle),
+                "cisiv_stage": infer_lifecycle_cisiv_stage(lifecycle),
             },
         )
-        cisiv_stage = _infer_lifecycle_cisiv_stage(lifecycle, default=run.get("cisiv_stage") or "implementation")
+        cisiv_stage = infer_lifecycle_cisiv_stage(lifecycle, default=run.get("cisiv_stage") or "implementation")
         step = self.append_step(
             run["id"],
             {

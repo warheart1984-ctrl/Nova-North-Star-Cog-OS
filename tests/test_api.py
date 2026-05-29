@@ -1900,6 +1900,155 @@ class TestChatApi(unittest.TestCase):
             "operator_turn",
         )
 
+    @patch("src.api.init_ai")
+    def test_chat_message_exposes_ul_substrate_envelope(self, mock_init_ai):
+        """Each live chat response should expose a top-level UL substrate envelope."""
+        mock_init_ai.return_value = (
+            SimpleNamespace(generate_chat=lambda *args, **kwargs: "UL envelope is visible on chat turns."),
+            None,
+        )
+        create_response = self.client.post(
+            "/api/chat/sessions",
+            json={"system_prompt": "You are Jarvis."},
+        )
+        session_id = create_response.get_json()["session_id"]
+
+        response = self.client.post(
+            f"/api/chat/sessions/{session_id}/message",
+            json={
+                "message": "Summarize the runtime envelope.",
+                "response_mode": "operator",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn("ul_substrate", payload)
+        self.assertIn("ul_trace", payload)
+        self.assertGreaterEqual(payload["ul_trace"]["count"], 1)
+        self.assertIn("protocol_trace", payload["ul_trace"]["sections"])
+        self.assertIn(payload["cisiv_stage"], api.CISIV_STAGE_SEQUENCE)
+        self.assertEqual(payload["cisiv_stage_sequence"], api.CISIV_STAGE_SEQUENCE)
+
+    @patch("src.api.init_ai")
+    def test_chat_message_exposes_modular_preview(self, mock_init_ai):
+        """Each live chat response should expose the modular UL preview path."""
+        mock_init_ai.return_value = (
+            SimpleNamespace(generate_chat=lambda *args, **kwargs: "Modular preview is wired."),
+            None,
+        )
+        create_response = self.client.post(
+            "/api/chat/sessions",
+            json={"system_prompt": "You are Jarvis."},
+        )
+        session_id = create_response.get_json()["session_id"]
+
+        response = self.client.post(
+            f"/api/chat/sessions/{session_id}/message",
+            json={
+                "message": "Show the modular preview envelope.",
+                "response_mode": "operator",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        modular_preview = payload.get("modular_preview")
+        self.assertIsInstance(modular_preview, dict)
+        self.assertTrue(modular_preview.get("provider_messages"))
+        ul_trace = modular_preview.get("ul_trace") or {}
+        sections = set(ul_trace.get("sections") or [])
+        self.assertIn("provider_payload", sections)
+        self.assertIn("guardrail_state", sections)
+        trace_preview = (payload.get("response_trace") or {}).get("modular_preview")
+        self.assertIsInstance(trace_preview, dict)
+        self.assertIn("ul_trace", trace_preview)
+
+    @patch("src.api.init_ai")
+    def test_chat_message_runs_project_infi_admission(self, mock_init_ai):
+        """Ordinary chat turns should pass through Project Infi verification admission."""
+        mock_init_ai.return_value = (
+            SimpleNamespace(generate_chat=lambda *args, **kwargs: "Admission verified this reply."),
+            None,
+        )
+        create_response = self.client.post(
+            "/api/chat/sessions",
+            json={"system_prompt": "You are Jarvis."},
+        )
+        session_id = create_response.get_json()["session_id"]
+
+        response = self.client.post(
+            f"/api/chat/sessions/{session_id}/message",
+            json={
+                "message": "Confirm governed admission on this turn.",
+                "response_mode": "operator",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["response"], "Admission verified this reply.")
+        self.assertEqual(payload["cisiv_stage"], "verification")
+        self.assertEqual(payload["law_enforcement"]["contract_version"], "aais.project_infi.ul.v1")
+        self.assertIn(
+            payload["law_enforcement"]["governed_cycle"]["status"],
+            {"success", "partial", "overload"},
+        )
+        self.assertTrue(payload["law_enforcement"]["governed_cycle"]["truthful"])
+        self.assertIsInstance(payload.get("law_event_log"), dict)
+        admission_trace = (payload.get("response_trace") or {}).get("chat_turn_admission") or {}
+        self.assertEqual(admission_trace.get("surface"), "chat_turn")
+        self.assertEqual(admission_trace.get("cisiv_stage"), "verification")
+        self.assertFalse(admission_trace.get("blocked"))
+
+    @patch("src.api.finalize_chat_turn_admission")
+    @patch("src.api.init_ai")
+    def test_chat_message_blocks_failed_project_infi_admission(
+        self,
+        mock_init_ai,
+        mock_finalize_admission,
+    ):
+        """Failed Project Infi admission should fail closed before the reply is returned."""
+        mock_init_ai.return_value = (
+            SimpleNamespace(generate_chat=lambda *args, **kwargs: "This reply should not ship."),
+            None,
+        )
+        mock_finalize_admission.return_value = (
+            "Jarvis held the reply because it did not pass governed final-truth admission.",
+            {
+                "error": "Jarvis held the reply because it did not pass governed final-truth admission.",
+                "law_enforcement": {
+                    "contract_version": "aais.project_infi.ul.v1",
+                    "governed_cycle": {"status": "rejected_no_admission", "truthful": False},
+                },
+                "cisiv_stage": "verification",
+                "status_code": 409,
+            },
+        )
+        create_response = self.client.post(
+            "/api/chat/sessions",
+            json={"system_prompt": "You are Jarvis."},
+        )
+        session_id = create_response.get_json()["session_id"]
+
+        response = self.client.post(
+            f"/api/chat/sessions/{session_id}/message",
+            json={
+                "message": "Trigger admission block.",
+                "response_mode": "operator",
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertIn("did not pass governed final-truth admission", payload["error"])
+        self.assertEqual(payload["cisiv_stage"], "verification")
+        self.assertEqual(
+            payload["law_enforcement"]["governed_cycle"]["status"],
+            "rejected_no_admission",
+        )
+        self.assertIn("ul_substrate", payload)
+
     def test_chat_message_blocks_detachment_attempt_and_places_source_on_review_hold(self):
         """Jarvis chat should fail closed when a turn declares detachment from AAIS."""
         create_response = self.client.post(

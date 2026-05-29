@@ -41,6 +41,16 @@ from src.patch_apply_engine import PatchApplyEngine
 from src.patch_execution_preview import PatchExecutionPreview
 from src.patch_review_store import PatchReviewStore
 from src.project_infi_law import ProjectInfiLaw
+from src.forge_repo_governance import (
+    build_forge_contractor_payload,
+    build_forge_eval_payload,
+    finalize_contractor_runtime_action,
+    govern_evolution_job_payload,
+    govern_patch_review_record,
+    infer_forge_cisiv_stage as _infer_forge_cisiv_stage,
+    infer_patch_review_cisiv_stage,
+    wrap_contractor_governed_payload,
+)
 from src.provider_mind import ProviderMind
 from src.run_ledger import RunLedger
 from src.Spatial_reasoning import SpatialReasoningPlug
@@ -146,10 +156,12 @@ def _repo_path_is_allowed(
 
 
 def _infer_action_cisiv_stage(action_id: str | None) -> str:
+    from src.cisiv import normalize_cisiv_stage
+
     normalized = _normalize_action_id(action_id)
     if normalized in {"run_pytest"}:
-        return "verification"
-    return "implementation"
+        return normalize_cisiv_stage("verification")
+    return normalize_cisiv_stage("implementation")
 
 
 def _filter_workspace_context_for_forge(
@@ -3638,6 +3650,7 @@ class JarvisOperator:
 
         cleaned_kind = str(kind or "").strip() or "generate_diff"
         task_id = f"forge-{uuid.uuid4().hex[:12]}"
+        cleaned_task = " ".join(str(task or "").split()).strip()
         forge_context = self.build_forge_context(
             task,
             workspace_context=workspace_context,
@@ -3662,19 +3675,34 @@ class JarvisOperator:
             context=forge_context,
             task_id=task_id,
         )
-        from src.aais_ul_substrate import attach_ul_substrate
-
-        return attach_ul_substrate(
-            {
+        law_enforcement, ul_snapshot, law_event_log = finalize_contractor_runtime_action(
+            surface="forge_contractor",
+            action_id=cleaned_kind,
+            target=task_id,
+            cisiv_stage=_infer_forge_cisiv_stage(cleaned_kind),
+            result=result if isinstance(result, dict) else {},
+            summary=str((result or {}).get("summary") or cleaned_task or "Forge contractor completed."),
+            details={
+                "task_preview": cleaned_task[:220],
+                "forge_context_goal": str(forge_context.get("goal") or "")[:220],
+                "operation_mode": forge_context.get("operation_mode"),
+            },
+            finalize_details={
                 "task_id": task_id,
-                "task": " ".join(str(task or "").split()).strip(),
                 "kind": cleaned_kind,
-                "result": result,
-                "auto_approve": auto_approve_forge_result(result),
-                "forge_context": forge_context,
-                "law_enforcement": dict(result.get("law_enforcement") or {}),
-                "ul_snapshot": dict(result.get("ul_snapshot") or {}),
-            }
+            },
+        )
+
+        return build_forge_contractor_payload(
+            task_id=task_id,
+            task=cleaned_task,
+            kind=cleaned_kind,
+            result=result,
+            forge_context=forge_context,
+            auto_approve=auto_approve_forge_result(result),
+            law_enforcement=law_enforcement,
+            ul_snapshot=ul_snapshot,
+            law_event_log=law_event_log,
         )
 
     def request_forge_repo_manager(
@@ -3739,14 +3767,24 @@ class JarvisOperator:
             payload=dict(payload or {}),
             task_id=resolved_task_id,
         )
-        from src.aais_ul_substrate import attach_ul_substrate
+        law_enforcement, ul_snapshot, law_event_log = finalize_contractor_runtime_action(
+            surface="forge_eval",
+            action_id=normalized_mode,
+            target=resolved_task_id,
+            cisiv_stage=_infer_forge_cisiv_stage("analyze"),
+            result=result if isinstance(result, dict) else {},
+            summary=str((result or {}).get("summary") or f"ForgeEval {normalized_mode} completed."),
+            details={"mode": normalized_mode},
+            finalize_details={"task_id": resolved_task_id, "mode": normalized_mode},
+        )
 
-        return attach_ul_substrate(
-            {
-                "task_id": resolved_task_id,
-                "mode": normalized_mode,
-                "result": result,
-            }
+        return build_forge_eval_payload(
+            task_id=resolved_task_id,
+            mode=normalized_mode,
+            result=result,
+            law_enforcement=law_enforcement,
+            ul_snapshot=ul_snapshot,
+            law_event_log=law_event_log,
         )
 
     def request_evolution_job(
@@ -3805,18 +3843,16 @@ class JarvisOperator:
             job_id=job_id,
             jarvis_run_id=jarvis_run_id,
         )
-        from src.aais_ul_substrate import attach_ul_substrate
 
-        return attach_ul_substrate(
-            {
-                "job_id": result.get("job_id"),
-                "task": cleaned_task,
-                "preset": normalized_preset,
-                "config": resolved_config,
-                "evaluation": resolved_evaluation,
-                "constraints": resolved_constraints,
-                "result": result,
-            }
+        return govern_evolution_job_payload(
+            task=cleaned_task,
+            preset=normalized_preset,
+            result=result if isinstance(result, dict) else {},
+            job_id=str(result.get("job_id") or job_id or ""),
+            jarvis_run_id=jarvis_run_id,
+            config=resolved_config,
+            evaluation=resolved_evaluation,
+            constraints=resolved_constraints,
         )
 
     def get_evolution_job_trace(self, job_id: str):
@@ -3985,7 +4021,17 @@ class JarvisOperator:
 
     def create_patch_review(self, *, session_id: str | None, patch_plan: dict):
         """Persist one review record for a PatchForge proposal."""
-        return self.patch_reviews.create_review(session_id=session_id, patch_plan=patch_plan)
+        review = self.patch_reviews.create_review(session_id=session_id, patch_plan=patch_plan)
+        return govern_patch_review_record(
+            review,
+            phase="create",
+            action_id="create_patch_review",
+            session_id=session_id,
+            details={
+                "plan_id": (patch_plan or {}).get("plan_id"),
+                "target_files": list((patch_plan or {}).get("target_files") or [])[:12],
+            },
+        )
 
     def _extract_external_suggestion_details(self, *sources) -> dict[str, Any]:
         """Return one normalized external-suggestion law payload from mixed sources."""
@@ -4043,12 +4089,24 @@ class JarvisOperator:
         target_index: int | None = None,
     ):
         """Store one patch review decision without mutating workspace files."""
-        return self.patch_reviews.record_decision(
+        review = self.patch_reviews.record_decision(
             review_id,
             decision=decision,
             note=note,
             target_kind=target_kind,
             target_index=target_index,
+        )
+        if not review:
+            return review
+        return govern_patch_review_record(
+            review,
+            phase="decision",
+            action_id="record_patch_review_decision",
+            details={
+                "decision": decision,
+                "target_kind": target_kind,
+                "target_index": target_index,
+            },
         )
 
     def _apply_patch_review_raw(self, review_id: str):
@@ -4102,7 +4160,7 @@ class JarvisOperator:
                 "goal": str(review.get("goal") or review_id).strip() or review_id,
                 "state_class": review.get("state_class"),
                 "truth_status": review.get("truth_status"),
-                "cisiv_stage": "implementation",
+                "cisiv_stage": infer_patch_review_cisiv_stage(phase="apply"),
             },
         )
         try:
@@ -4116,7 +4174,7 @@ class JarvisOperator:
                 repo_change=True,
                 verification_plan=verification_plan,
                 run_id=run["id"],
-                cisiv_stage="implementation",
+                cisiv_stage=infer_patch_review_cisiv_stage(phase="apply"),
                 details={
                     "review_id": review_id,
                     **external_details,
@@ -4195,18 +4253,25 @@ class JarvisOperator:
                 final_status = governed_status or "failed"
             summary = law_enforcement["project_infi_layers"]["outcome"]["detail"] or raw_result.get("summary")
             run = self.close_run(run["id"], status=final_status, summary=summary)
-            return {
-                **raw_result,
-                "status": final_status,
-                "summary": summary,
-                "run": run,
-                "verification": normalized_plan,
-                "law_enforcement": law_enforcement,
-                "ul_snapshot": ul_snapshot,
-                "law_event_log": law_event_log,
-                "judgment_log": judgment_log,
-                "logbook_entry": logbook_entry,
-            }
+            return wrap_contractor_governed_payload(
+                {
+                    **raw_result,
+                    "status": final_status,
+                    "summary": summary,
+                    "run": run,
+                    "verification": normalized_plan,
+                    "law_enforcement": law_enforcement,
+                    "ul_snapshot": ul_snapshot,
+                    "law_event_log": law_event_log,
+                    "judgment_log": judgment_log,
+                    "logbook_entry": logbook_entry,
+                    "cisiv_stage": (
+                        infer_patch_review_cisiv_stage(phase="verify")
+                        if final_status == "awaiting_verification"
+                        else infer_patch_review_cisiv_stage(phase="apply")
+                    ),
+                }
+            )
         except Exception:
             self.close_run(run["id"], status="failed", summary="Project Infi law blocked or failed this repo change.")
             raise
@@ -5072,14 +5137,14 @@ class JarvisOperator:
             f"- {result['relative_path']} ({result['kind']}): {_clip_text(result['snippet'], limit=140)}"
             for result in results[:4]
         ]
-        file_blocks = [
-            (
+        file_blocks = []
+        for file_payload in files:
+            truncated_suffix = "\n[preview truncated]" if file_payload["truncated"] else ""
+            file_blocks.append(
                 f"[File: {file_payload['relative_path']}]\n"
                 f"{file_payload['content']}"
-                f"{'\\n[preview truncated]' if file_payload['truncated'] else ''}"
+                f"{truncated_suffix}"
             )
-            for file_payload in files
-        ]
         project_profile = self.evolving_workspace.detect_project_profile(path_prefix=scoped_project)
         symbol_payload = self.evolving_workspace.list_symbols(
             query=query,

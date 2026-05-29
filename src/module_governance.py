@@ -15,7 +15,7 @@ import uuid
 from src.governance_layer import GovernanceLayer, governance_layer
 from src.immune_system import ImmuneSystemController, immune_system
 from src.seam_log import record_seam_event
-
+from src.cisiv import CISIV_STAGE_LABELS, CISIV_STAGE_SEQUENCE
 
 PROTOCOL_ID = "aais.module_governance"
 PROTOCOL_VERSION = "1.1"
@@ -26,22 +26,6 @@ CORE_LINES = [
     "Use the signal. Do not keep the trace.",
     "If a module violates the user, it is treated as hostile.",
 ]
-
-CISIV_STAGE_SEQUENCE = [
-    "concept",
-    "identity",
-    "structure",
-    "implementation",
-    "verification",
-]
-
-CISIV_STAGE_LABELS = {
-    "concept": "Concept",
-    "identity": "Identity",
-    "structure": "Structure",
-    "implementation": "Implementation",
-    "verification": "Verification",
-}
 
 CISIV_PASS_STATUSES = {
     "passed",
