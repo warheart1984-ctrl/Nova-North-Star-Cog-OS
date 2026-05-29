@@ -206,3 +206,14 @@ Templates: [`templates/PROOF_BUNDLE_TEMPLATE.md`](templates/PROOF_BUNDLE_TEMPLAT
 3. I will preserve constitutional precedence and no-bypass governance.
 4. I will track documentation/governance debt instead of hiding it.
 5. I will treat missing evidence as a stop condition, not a paperwork delay.
+
+---
+
+## Contributors
+
+See [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+
+- **Jon Halstead** — maintainer and constitutional authority
+- **Cursor Agent (Auto)** — AI implementation collaborator (UL/CISIV Phases 1–5, governance modules, proof bundles, operational README; commits `7b4e806`, `b086b1e`)
+
+Human–AI collaboration follows [`HUMAN_AI_CO_COLLABORATION_CHARTER.md`](HUMAN_AI_CO_COLLABORATION_CHARTER.md).
