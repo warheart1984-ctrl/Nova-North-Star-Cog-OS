@@ -87,9 +87,9 @@ Post-commit record:
 
 ```text
 git rev-parse HEAD
-2b497567b64c37b85d7648055c74afe8d57ba04a
+7b4e8060621a5b0a642be7671688c22f2fa27fb4
 git log -1 --format=%H%n%s
-2b497567b64c37b85d7648055c74afe8d57ba04a
+7b4e8060621a5b0a642be7671688c22f2fa27fb4
 Wire AAIS UL/CISIV phases 1-5 across chat, forge, and repo paths.
 ```
 
