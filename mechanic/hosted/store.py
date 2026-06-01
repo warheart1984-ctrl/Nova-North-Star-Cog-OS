@@ -244,11 +244,14 @@ class HostedMechanicStore:
 
     def _execute(self, conn: Any, sql: str, params: tuple[Any, ...] = ()) -> Any:
         if self.is_postgres:
+            from psycopg.types.json import Jsonb  # type: ignore[import-not-found]
+
             sql = sql.replace("?", "%s")
             sql = sql.replace("ON CONFLICT(customer_id) DO UPDATE SET payload=excluded.payload", "ON CONFLICT(customer_id) DO UPDATE SET payload=EXCLUDED.payload")
             sql = sql.replace("ON CONFLICT(installation_id) DO UPDATE SET", "ON CONFLICT(installation_id) DO UPDATE SET")
             sql = sql.replace("excluded.", "EXCLUDED.")
-            return conn.execute(sql, params)
+            converted = tuple(_maybe_jsonb(item) for item in params)
+            return conn.execute(sql, converted)
         return conn.execute(sql, params)
 
     def _commit(self, conn: Any) -> None:
@@ -261,3 +264,18 @@ def _payload(row: Any) -> dict[str, Any]:
     if isinstance(value, str):
         return json.loads(value)
     return dict(value)
+
+
+def _maybe_jsonb(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text or text[0] not in "[{":
+        return value
+    try:
+        import json as _json
+        from psycopg.types.json import Jsonb  # type: ignore[import-not-found]
+
+        return Jsonb(_json.loads(text))
+    except (ValueError, TypeError):
+        return value

@@ -29,7 +29,7 @@ class GitHubCallbackRequest(BaseModel):
 
 class CreateScanRequest(BaseModel):
     installation_id: str
-    repo_path: str
+    repo_path: str = ""
     scan_id: str | None = None
     case_id: str | None = None
     repo_ref: str | None = None

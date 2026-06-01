@@ -18,6 +18,7 @@ from mechanic.hosted.models import SignoffPolicy
 from mechanic.hosted.obd_report import build_obd_report
 from mechanic.hosted.security import hash_api_key, redact_json, verify_github_webhook_signature
 from mechanic.hosted.smoke import run_stubbed_smoke
+from mechanic.hosted.stubs import create_stubbed_service
 from mechanic.hosted.trace_import import import_trace_file, normalize_trace_records
 from mechanic.hosted.worker import run_hosted_scan
 from mechanic.hosted.worker import replay_scan
@@ -273,6 +274,35 @@ class TestHostedApi(unittest.TestCase):
                 json={"repo_id": "org/repo"},
             )
             self.assertEqual(response.status_code, 401)
+
+    def test_api_checkout_scan_without_repo_path_uses_stub_github(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            service = create_stubbed_service(
+                artifact_root=Path(tmp) / "artifacts",
+                db_path=Path(tmp) / "db.sqlite3",
+                source_repo=FIXTURE_REPO,
+            )
+            app = create_app(service=service, api_key_hash=hash_api_key("dev-key"))
+            client = TestClient(app)
+            headers = {"X-API-Key": "dev-key"}
+            client.post(
+                "/v1/installations/github/callback",
+                headers=headers,
+                json={"customer_id": "cust", "org": "org", "repo_id": "org/repo", "installation_id": "inst"},
+            )
+            response = client.post(
+                "/v1/scans",
+                headers=headers,
+                json={
+                    "installation_id": "inst",
+                    "scan_id": "checkout-scan",
+                    "case_id": "checkout-case",
+                    "checkout": True,
+                    "repo_ref": "main",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["job"]["status"], "complete")
 
 
 class TestHostedStubSmoke(unittest.TestCase):
